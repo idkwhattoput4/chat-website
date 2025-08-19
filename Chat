@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MiniChat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="theme-color" content="#0ea5e9" />
+  <style>
+    html, body { height: 100%; }
+    #messages::-webkit-scrollbar { width: 10px; }
+    #messages::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 9999px; }
+    #messages:hover::-webkit-scrollbar-thumb { background: #d1d5db; }
+  </style>
+</head>
+<body class="min-h-full bg-gradient-to-br from-sky-50 to-white flex items-center justify-center p-4">
+  <div class="w-full max-w-3xl">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="flex items-center gap-3 px-5 py-4 bg-sky-600 text-white">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor"><path d="M2 5a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H9.83L4.41 21.59A1 1 0 0 1 3 20.83V17a3 3 0 0 1-1-2V5Z"/></svg>
+        <div class="flex-1">
+          <h1 class="font-semibold text-lg leading-tight">MiniChat</h1>
+          <p class="text-sm opacity-90">A tiny realtime chat you can host anywhere</p>
+        </div>
+        <button id="nameBtn" class="text-sm bg-white/20 hover:bg-white/30 transition px-3 py-1.5 rounded-full">Set name</button>
+      </div>
+
+      <div id="messages" class="h-[60vh] overflow-y-auto p-4 space-y-2 bg-slate-50"></div>
+
+      <form id="composer" class="border-t border-slate-200 p-3 flex gap-2 bg-white">
+        <input id="messageInput" autocomplete="off" maxlength="500" placeholder="Type a message" class="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent" />
+        <button class="px-4 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 active:scale-[.99]">Send</button>
+      </form>
+    </div>
+
+    <p class="text-xs text-slate-500 mt-3 text-center">Tip: Share this page's URL with friends. Everyone on the same URL will chat together.</p>
+  </div>
+
+  <!-- Username filter -->
+  <script>
+    const badWords = ["badword1", "badword2", "curse", "slur"]; // extend this list
+
+    function sanitizeName(name) {
+      if (!name) return "Guest";
+      const lower = name.toLowerCase();
+      for (let w of badWords) {
+        if (lower.includes(w)) {
+          alert("That name is not allowed. Please choose another.");
+          return "Guest";
+        }
+      }
+      return name.slice(0, 25);
+    }
+
+    function askName() {
+      const prev = localStorage.getItem('minichat_name') || '';
+      let name = prompt('Choose a display name:', prev || 'Guest');
+      if (name) {
+        name = sanitizeName(name.trim());
+        localStorage.setItem('minichat_name', name);
+      }
+    }
+
+    document.getElementById('nameBtn').addEventListener('click', askName);
+    if (!localStorage.getItem('minichat_name')) askName();
+  </script>
+
+  <!-- Offline fallback (local-only chat) -->
+  <script>
+    const messages = document.getElementById('messages');
+    const composer = document.getElementById('composer');
+    const input = document.getElementById('messageInput');
+
+    composer.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (text) {
+        const name = localStorage.getItem('minichat_name') || 'Guest';
+        renderMessage(name, text, true);
+        input.value = '';
+      }
+    });
+
+    function renderMessage(name, text, isYou = false) {
+      const row = document.createElement('div');
+      row.className = isYou ? 'flex justify-end' : 'flex justify-start';
+
+      const bubble = document.createElement('div');
+      bubble.className = isYou
+        ? 'bg-sky-600 text-white px-4 py-2 rounded-2xl shadow-sm max-w-[80%]'
+        : 'bg-white border border-slate-200 px-4 py-2 rounded-2xl shadow-sm max-w-[80%]';
+
+      const label = document.createElement('div');
+      label.className = 'text-xs font-semibold mb-1 ' + (isYou ? 'text-white' : 'text-sky-700');
+      label.textContent = isYou ? 'You' : name;
+
+      const body = document.createElement('div');
+      body.className = 'whitespace-pre-wrap break-words text-sm';
+      body.textContent = text;
+
+      bubble.appendChild(label);
+      bubble.appendChild(body);
+      row.appendChild(bubble);
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+  </script>
+
+  <!-- Firebase (realtime sync) -->
+  <script type="module">
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID",
+    };
+
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+    import { getDatabase, ref, push, onChildAdded, query, limitToLast } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+
+    try {
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+
+      const ROOM_ID = location.pathname.replaceAll('/', '_') || 'default_room';
+      const MESSAGES_REF = ref(db, `minichat/rooms/${ROOM_ID}/messages`);
+
+      const composer = document.getElementById('composer');
+      const input = document.getElementById('messageInput');
+      const messagesEl = document.getElementById('messages');
+
+      composer.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+        let name = localStorage.getItem('minichat_name') || 'Guest';
+        name = sanitizeName(name);
+        await push(MESSAGES_REF, { name, text, ts: Date.now() });
+      });
+
+      const liveQuery = query(MESSAGES_REF, limitToLast(200));
+      onChildAdded(liveQuery, (snap) => {
+        const msg = snap.val();
+        const currentName = localStorage.getItem('minichat_name') || 'Guest';
+        const isYou = msg.name === currentName;
+
+        const row = document.createElement('div');
+        row.className = isYou ? 'flex justify-end' : 'flex justify-start';
+
+        const bubble = document.createElement('div');
+        bubble.className = isYou
+          ? 'bg-sky-600 text-white px-4 py-2 rounded-2xl shadow-sm max-w-[80%]'
+          : 'bg-white border border-slate-200 px-4 py-2 rounded-2xl shadow-sm max-w-[80%]';
+
+        const label = document.createElement('div');
+        label.className = 'text-xs font-semibold mb-1 ' + (isYou ? 'text-white' : 'text-sky-700');
+        label.textContent = isYou ? 'You' : msg.name || 'Anon';
+
+        const body = document.createElement('div');
+        body.className = 'whitespace-pre-wrap break-words text-sm';
+        body.textContent = msg.text;
+
+        bubble.appendChild(label);
+        bubble.appendChild(body);
+        row.appendChild(bubble);
+        messagesEl.appendChild(row);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      });
+    } catch (err) {
+      console.warn('Firebase not configured. Running in offline mode.');
+    }
+  </script>
+</body>
+</html>
+
